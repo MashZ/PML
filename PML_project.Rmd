@@ -1,0 +1,150 @@
+---
+title: "Prediction Assessment - Practical Machine Learning (September 2015)"
+author: "Mash Zahid"
+date: "September 15, 2015"
+output: html_document
+---
+
+DATA REFERENCE
+Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H. Qualitative Activity Recognition of Weight Lifting Exercises. Proceedings of 4th International Conference in Cooperation with SIGCHI (Augmented Human '13) . Stuttgart, Germany: ACM SIGCHI, 2013.
+
+This dataset is licensed under the Creative Commons license (CC BY-SA). Read more: http://groupware.les.inf.puc-rio.br/har
+
+First steps are loading the linked data extract files, then getting familiar with its salient features. 
+```{r}
+trainURL = "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv" 
+testURL = "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+
+rawtrain = read.csv(url(trainURL))
+rawtest = read.csv(url(testURL))
+
+str(rawtrain)
+str(rawtest)
+names(rawtest) == names(rawtrain)
+```
+
+160 variables in each train and test sets. rawtrain has 19,622 observations, rawtest has 20. 
+Comparing names show that 160th column is problem_id in rawtest (just a useless count from 1 to 20), but is the dependent variable 'classe' in rawtrain. 
+
+TIDYING THE TRAINING & TEST DATASETS
+Just looking at the data plus the descriptions from reference show that the first 7 columns are user specific information and can be safely removed. 
+```{r, echo=FALSE}
+train1 = rawtrain[ , -c(1:7)] 
+test1 = rawtest[ , -c(1:7)]
+names(test1) == names(train1)
+```
+
+Life becomes so simple with caret's nearZeroVar function, which is used to identify columns with #DIV/0! and NA's from the training set.
+
+This step uses only the training data because of its larger size, which is assumed to be reflective of reality. Columns to drop are stored in NZVtrainvars, which is then used to clean/tidy the training and test datasets further.
+```{r}
+library(caret)
+NZVtrainvars = nearZeroVar(train1)
+train = train1[ , -NZVtrainvars]
+test = test1[ , -NZVtrainvars]
+
+names(test) == names(train)
+str(train)
+str(test)
+names(train1[, NZVtrainvars])
+
+```
+
+Above step still leaves NA's in training. So next approach is to manually remove columns with names beginning in kurtosis, skewness, max, min, amplitude, avg, stddev, & var.
+```{r}
+## grep( c('^kurtosis', '^skewness', '^max', '^min', '^amplitude', '^avg', '^stdev', '^var'), names(train1) )
+cols_kurtosis = grep( '^kurtosis', names(train1) )
+cols_skewness = grep( '^skewness', names(train1) )
+cols_max = grep( '^max', names(train1) )
+cols_min = grep( '^min', names(train1) )
+cols_amplitude = grep( '^amplitude', names(train1) )
+cols_avg = grep( '^avg', names(train1) )
+cols_stddev = grep( '^stddev', names(train1) )
+cols_var = grep( '^var', names(train1) )
+
+NZvars = c(cols_kurtosis, cols_skewness, cols_max, cols_min, cols_amplitude, cols_avg, cols_stddev, cols_var)
+NZvars
+
+names(train1[ , -NZvars]) == names(test1[ , -NZvars])
+
+train = train1[ , -NZvars]
+test = test1[ , -NZvars]
+dim(train)
+dim(test)
+names(train) == names(test)
+```
+
+Remove test's last column problem_id, which is just a numeric count.
+```{r}
+test = test[, -ncol(test)]
+```
+
+PROJECT OBJECTIVE: The goal of your project is to predict the manner in which they did the exercise. This is the "classe" variable in the training set. 
+You may use any of the other variables to predict with. 
+
+You should create a report (1) describing how you built your model, 
+(2) how you used cross validation, 
+(3) what you think the expected out of sample error is, and why you made the choices you did. 
+
+Finally, you will also use your prediction model to predict 20 different test cases. 
+
+Load all the required libraries.
+```{r}
+library(caret)
+library(randomForest)
+library(rpart)
+library(rattle)
+library(rpart.plot)
+
+set.seed(1)
+```
+
+Let's split our tidy train dataset into myTrain & myTest subsets.
+```{r}
+inTrain <- createDataPartition(y=train$classe, p=0.9, list=FALSE)
+myTrain <- train[inTrain,]
+myTest <- train[-inTrain,]
+dim(myTrain); dim(myTest)
+```
+
+First, start with a simple decision tree
+```{r}
+modelTreeTrain <- train(classe ~ ., method="rpart", data=myTrain)
+predTreeTrain = predict(modelTreeTrain, newdata = myTest)
+
+confusionMatrix(predTreeTrain, myTest$classe)
+```
+This is awful! Accuracy : 0.4918
+
+Second, try random forest classification
+```{r}
+modelRFtrain = randomForest(classe ~ ., data = myTrain)
+modelRFpred = predict(modelRFtrain, newdata = myTest)
+
+confusionMatrix(modelRFpred, myTest$classe)
+```
+So much better! Accuracy : 0.9974
+
+Run random forest on the entire train dataset to get the model for the test set.
+```{r}
+modelRF = randomForest(classe ~ ., data = train, importance = TRUE)
+predRF = predict(modelRF, newdata = test, type = "class")
+
+predRF
+write.table(predRF,file="PMLsubmission.txt",quote=FALSE,row.names=FALSE,col.names=FALSE)
+```
+
+Produce the 20 output files per submission instructions.
+```{r}
+pml_write_files = function(x){ 
+  n = length(x)
+  
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+  }
+
+pml_write_files(predRF)
+```
+
