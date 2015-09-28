@@ -118,16 +118,16 @@ This is awful! Accuracy : 0.4918
 
 Second, try random forest classification
 ```{r}
-modelRFtrain = randomForest(classe ~ ., data = myTrain)
+modelRFtrain = randomForest(classe ~ ., data = myTrain, trControl = trainControl(method = "cv"), number = 3)
 modelRFpred = predict(modelRFtrain, newdata = myTest)
 
 confusionMatrix(modelRFpred, myTest$classe)
 ```
-So much better! Accuracy : 0.9974
+So much better! Accuracy : 0.998
 
 Run random forest on the entire train dataset to get the model for the test set.
 ```{r}
-modelRF = randomForest(classe ~ ., data = train, importance = TRUE)
+modelRF = randomForest(classe ~ ., data = train, importance = TRUE, trControl = trainControl(method = "cv"), number = 3)
 predRF = predict(modelRF, newdata = test, type = "class")
 
 predRF
